@@ -262,6 +262,9 @@ Within about 1–2 minutes, `threetier-dev-api-5xx` goes to ALARM and the email 
 - **The deploy role is service-scoped, not resource-scoped** for every action (e.g. `ec2:*` in one region). This is
   pragmatic for a role that runs `terraform apply`, and IAM escalation is closed by the permissions boundary. In production,
   split infrastructure and app pipelines, scope by `aws:ResourceTag/Project`, and use a dedicated AWS account per environment.
+- **The deploy role controls the whole stack**, so it could also reset the DB password or create roles that trust
+  another principal. Those roles are still capped by the permissions boundary. In production, pre-create the workload roles in
+  the bootstrap stack and remove `iam:CreateRole` from CI.
 - **The PR plan role can read Terraform state**, which contains the origin-verify header value. Only repository collaborators can
   trigger it, because fork PRs never receive an OIDC token.
 - **No WAF, access logs or CMKs** for every service (see the checkov skips). The cost/complexity is not justified for a demo.

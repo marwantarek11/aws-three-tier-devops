@@ -32,11 +32,18 @@ data "aws_iam_policy_document" "workload_boundary" {
     ]
   }
 
-  # RDS-managed master secrets are always named "rds!...".
+  # RDS-managed master secrets are named "rds!..." and tagged by RDS with their owning instance;
+  # the tag condition limits this to this environment's databases only.
   statement {
-    sid       = "ReadRdsManagedSecret"
+    sid       = "ReadOwnRdsManagedSecret"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = ["arn:aws:secretsmanager:${var.aws_region}:${local.account_id}:secret:rds!*"]
+
+    condition {
+      test     = "StringLike"
+      variable = "secretsmanager:ResourceTag/aws:rds:primaryDBInstanceArn"
+      values   = ["arn:aws:rds:${var.aws_region}:${local.account_id}:db:${local.name_prefix}-*"]
+    }
   }
 }
 
