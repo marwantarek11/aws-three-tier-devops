@@ -330,5 +330,36 @@ Captured from the live deployment (account on the AWS Free plan, `eu-north-1`), 
 **Dashboard:** request/5xx spike, latency, ECS and RDS metrics, alarm status
 ![CloudWatch dashboard](docs/screenshots/dashboard.jpg)
 
+### Network
+
+**VPC resource map:** 6 subnets (public / app / data × 2 AZs), a public route table (to the IGW) and a private route
+table (only the S3 gateway endpoint, **no NAT, no internet route**)
+![VPC resource map](docs/screenshots/network/vpc-resource-map.jpg)
+
+**VPC endpoints:** private access to S3, ECR (api + dkr), CloudWatch Logs and Secrets Manager
+![VPC endpoints](docs/screenshots/network/vpc-endpoints.jpg)
+
+**Security group chain:** CloudFront prefix list → ALB :80 → tasks :8000 → RDS :5432
+
+| ALB SG: inbound only from the CloudFront prefix list | Task SG: inbound only from the ALB SG |
+|---|---|
+| ![ALB SG](docs/screenshots/network/sg-alb.jpg) | ![Task SG inbound](docs/screenshots/network/sg-api-task-inbound.jpg) |
+| **Task SG outbound:** only 5432/443 inside the VPC + the S3 endpoint | **DB SG:** inbound 5432 only from the task SG, no outbound |
+| ![Task SG outbound](docs/screenshots/network/sg-api-task-outbound.jpg) | ![DB SG](docs/screenshots/network/sg-db.jpg) |
+
+**ALB listener:** the default action is `403 Forbidden`; only requests carrying CloudFront's secret origin header are forwarded
+![ALB listener](docs/screenshots/network/alb-listener.jpg)
+
+**CloudFront behaviors:** `/api/*` → ALB (no caching, HTTPS only), everything else → S3 (cached), security headers on both
+![CloudFront behaviors](docs/screenshots/network/cloudfront-behaviors.jpg)
+
+Direct access test:
+```
+$ curl http://threetier-dev-alb-…elb.amazonaws.com/api/hello   →  timeout (security group drops non-CloudFront traffic)
+$ curl https://dy3psy7ktf8fp.cloudfront.net/api/hello          →  200
+```
+
+### Alerting
+
 **Alert delivery:** SNS email for `threetier-dev-api-5xx`
 ![Alarm email](docs/screenshots/alarm-email.png)
