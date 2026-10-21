@@ -23,8 +23,9 @@ rotate() {
   creds=$(aws iam create-access-key --user-name "$user" \
     --query '[AccessKey.AccessKeyId,AccessKey.SecretAccessKey]' --output text)
 
-  gh secret set "$id_secret"  --repo "$repo" "${scope[@]}" --body "$(cut -f1 <<<"$creds")"
-  gh secret set "$key_secret" --repo "$repo" "${scope[@]}" --body "$(cut -f2 <<<"$creds")"
+  # Values go through stdin, never argv (argv is visible in the process list).
+  cut -f1 <<<"$creds" | gh secret set "$id_secret"  --repo "$repo" "${scope[@]}"
+  cut -f2 <<<"$creds" | gh secret set "$key_secret" --repo "$repo" "${scope[@]}"
   unset creds
 
   for k in $old_keys; do

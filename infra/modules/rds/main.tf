@@ -14,14 +14,15 @@ resource "aws_security_group" "db" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "db_from_app" {
-  for_each = toset(var.allowed_security_group_ids)
+  # count (not for_each): the SG IDs are unknown until apply, but the list length is known.
+  count = length(var.allowed_security_group_ids)
 
   security_group_id            = aws_security_group.db.id
   description                  = "PostgreSQL from app tier"
   ip_protocol                  = "tcp"
   from_port                    = 5432
   to_port                      = 5432
-  referenced_security_group_id = each.value
+  referenced_security_group_id = var.allowed_security_group_ids[count.index]
 }
 
 resource "aws_db_parameter_group" "this" {
