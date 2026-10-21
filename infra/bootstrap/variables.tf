@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "Region for the state bucket, ECR and the regional resources CI may manage."
   type        = string
-  default     = "eu-central-1"
+  default     = "eu-north-1"
 }
 
 variable "project" {
@@ -29,4 +29,15 @@ variable "github_owner" {
 variable "github_repo" {
   description = "GitHub repository name."
   type        = string
+}
+
+variable "ci_auth_mode" {
+  description = "How GitHub Actions authenticates: \"oidc\" (preferred, keyless) or \"iam_user\" (accounts that block OIDC providers)."
+  type        = string
+  default     = "oidc"
+
+  validation {
+    condition     = contains(["oidc", "iam_user"], var.ci_auth_mode)
+    error_message = "ci_auth_mode must be \"oidc\" or \"iam_user\"."
+  }
 }

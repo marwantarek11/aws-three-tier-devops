@@ -11,6 +11,9 @@ skip-check:
   - CKV_AWS_111  # (same) key policy + scoped deploy role, see README
   - CKV_AWS_356  # (same) key policies always use Resource "*"
   - CKV_AWS_394  # AZs are selected by name and sliced deterministically
+  # --- ci_auth_mode = "iam_user" (sandbox account blocks OIDC providers) ---
+  - CKV_AWS_273  # credential-only CI users exist only when OIDC is unavailable
+  - CKV_AWS_40   # each CI user has exactly one inline policy: sts:AssumeRole into its role
   # --- Needs a custom domain + ACM certificate (out of scope, see README) ---
   - CKV_AWS_2    # ALB HTTPS listener
   - CKV_AWS_103  # ALB TLS policy

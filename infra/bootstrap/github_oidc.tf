@@ -1,4 +1,9 @@
-# GitHub Actions authenticates with short-lived OIDC tokens; no AWS access keys exist anywhere.
+# How GitHub Actions authenticates to AWS (var.ci_auth_mode):
+#   "oidc"     - short-lived OIDC tokens, no AWS keys anywhere (preferred).
+#   "iam_user" - for accounts whose guardrails deny iam:CreateOpenIDConnectProvider (e.g. AWS
+#                sandbox projects). Two credential-only IAM users can do nothing except
+#                sts:AssumeRole into the same least-privilege roles; their keys live only in
+#                GitHub encrypted secrets (deploy keys in the main-only "dev" environment).
 
 data "aws_caller_identity" "current" {}
 
@@ -7,11 +12,39 @@ locals {
   repo        = "${var.github_owner}/${var.github_repo}"
   name_prefix = "${var.project}-${var.environment}"
   oidc_host   = "token.actions.githubusercontent.com"
+  use_oidc    = var.ci_auth_mode == "oidc"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
+  count = local.use_oidc ? 1 : 0
+
   url            = "https://${local.oidc_host}"
   client_id_list = ["sts.amazonaws.com"]
+}
+
+# ---- iam_user mode: credential-only users, one per role ----
+
+resource "aws_iam_user" "ci" {
+  for_each = local.use_oidc ? toset([]) : toset(["plan", "deploy"])
+
+  name = "${var.project}-ci-${each.key}"
+}
+
+data "aws_iam_policy_document" "ci_user_assume" {
+  for_each = aws_iam_user.ci
+
+  statement {
+    actions   = ["sts:AssumeRole", "sts:TagSession"]
+    resources = ["arn:aws:iam::${local.account_id}:role/${var.project}-github-${each.key}"]
+  }
+}
+
+resource "aws_iam_user_policy" "ci_user_assume" {
+  for_each = aws_iam_user.ci
+
+  name   = "assume-${each.key}-role-only"
+  user   = each.value.name
+  policy = data.aws_iam_policy_document.ci_user_assume[each.key].json
 }
 
 # =====================================================================
@@ -19,24 +52,39 @@ resource "aws_iam_openid_connect_provider" "github" {
 # =====================================================================
 
 data "aws_iam_policy_document" "github_plan_trust" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
+  dynamic "statement" {
+    for_each = local.use_oidc ? [1] : []
+    content {
+      actions = ["sts:AssumeRoleWithWebIdentity"]
 
-    principals {
-      type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      principals {
+        type        = "Federated"
+        identifiers = [aws_iam_openid_connect_provider.github[0].arn]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "${local.oidc_host}:aud"
+        values   = ["sts.amazonaws.com"]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "${local.oidc_host}:sub"
+        values   = ["repo:${local.repo}:pull_request"]
+      }
     }
+  }
 
-    condition {
-      test     = "StringEquals"
-      variable = "${local.oidc_host}:aud"
-      values   = ["sts.amazonaws.com"]
-    }
+  dynamic "statement" {
+    for_each = local.use_oidc ? [] : [1]
+    content {
+      actions = ["sts:AssumeRole", "sts:TagSession"]
 
-    condition {
-      test     = "StringEquals"
-      variable = "${local.oidc_host}:sub"
-      values   = ["repo:${local.repo}:pull_request"]
+      principals {
+        type        = "AWS"
+        identifiers = [aws_iam_user.ci["plan"].arn]
+      }
     }
   }
 }
@@ -53,8 +101,8 @@ resource "aws_iam_role_policy_attachment" "github_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# Only same-repo PRs can obtain this role (fork PRs get no OIDC token), and even then
-# secret values stay unreadable.
+# Only same-repo PRs can obtain this role (fork PRs get neither OIDC tokens nor secrets),
+# and even then secret values stay unreadable.
 data "aws_iam_policy_document" "github_plan_guardrails" {
   statement {
     sid       = "DenySecretReads"
@@ -76,24 +124,40 @@ resource "aws_iam_role_policy" "github_plan_guardrails" {
 # =====================================================================
 
 data "aws_iam_policy_document" "github_deploy_trust" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
+  dynamic "statement" {
+    for_each = local.use_oidc ? [1] : []
+    content {
+      actions = ["sts:AssumeRoleWithWebIdentity"]
 
-    principals {
-      type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      principals {
+        type        = "Federated"
+        identifiers = [aws_iam_openid_connect_provider.github[0].arn]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "${local.oidc_host}:aud"
+        values   = ["sts.amazonaws.com"]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "${local.oidc_host}:sub"
+        values   = ["repo:${local.repo}:environment:${var.environment}"]
+      }
     }
+  }
 
-    condition {
-      test     = "StringEquals"
-      variable = "${local.oidc_host}:aud"
-      values   = ["sts.amazonaws.com"]
-    }
+  # Deploy keys are stored only as secrets of the main-only "dev" environment.
+  dynamic "statement" {
+    for_each = local.use_oidc ? [] : [1]
+    content {
+      actions = ["sts:AssumeRole", "sts:TagSession"]
 
-    condition {
-      test     = "StringEquals"
-      variable = "${local.oidc_host}:sub"
-      values   = ["repo:${local.repo}:environment:${var.environment}"]
+      principals {
+        type        = "AWS"
+        identifiers = [aws_iam_user.ci["deploy"].arn]
+      }
     }
   }
 }

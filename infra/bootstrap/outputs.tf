@@ -22,3 +22,8 @@ output "deploy_role_arn" {
   description = "Role GitHub Actions assumes to deploy from the protected environment. Set as environment variable AWS_DEPLOY_ROLE_ARN."
   value       = aws_iam_role.github_deploy.arn
 }
+
+output "ci_user_names" {
+  description = "iam_user mode only: IAM users whose access keys go into GitHub secrets."
+  value       = { for k, u in aws_iam_user.ci : k => u.name }
+}
