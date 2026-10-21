@@ -16,6 +16,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.12"
   TF_VERSION: "1.17.0"
+  CHECKOV_VERSION: "3.3.30"
 
 jobs:
   # ---------------------------------------------------------------- Build + Test
@@ -111,12 +112,15 @@ jobs:
             tflint --chdir="$dir" --config "$PWD/.tflint.hcl"
           done
 
-      - name: checkov (IaC security scan)
-        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          directory: infra
-          framework: terraform
-          config_file: infra/.checkov.yml
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Pinned CLI (same version as local runs) so CI and laptop results match.
+      - name: checkov (IaC security scan)
+        run: |
+          pip install --quiet "checkov==${CHECKOV_VERSION}"
+          checkov -d . --framework terraform --config-file .checkov.yml
 
   # ---------------------------------------------------------------- Plan (PRs only)
   terraform-plan:

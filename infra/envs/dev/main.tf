@@ -9,6 +9,11 @@ data "aws_ecr_repository" "api" {
   name = "${local.name_prefix}-api"
 }
 
+# Created by infra/bootstrap; the CI deploy role may only create roles that carry it.
+data "aws_iam_policy" "workload_boundary" {
+  name = "${local.name_prefix}-workload-boundary"
+}
+
 module "network" {
   source = "../../modules/network"
 
@@ -16,6 +21,8 @@ module "network" {
   vpc_cidr           = var.vpc_cidr
   az_count           = var.az_count
   log_retention_days = var.log_retention_days
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
 }
 
 module "rds" {
@@ -53,6 +60,7 @@ module "ecs" {
   db_secret_arn = module.rds.master_user_secret_arn
 
   origin_verify_header_value = random_password.origin_verify.result
+  permissions_boundary_arn   = data.aws_iam_policy.workload_boundary.arn
 }
 
 module "frontend" {

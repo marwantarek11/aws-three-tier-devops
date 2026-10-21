@@ -173,8 +173,9 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
 }
 
 resource "aws_iam_role" "execution" {
-  name               = "${var.name_prefix}-api-execution"
-  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+  name                 = "${var.name_prefix}-api-execution"
+  assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 # Scoped replacement for AmazonECSTaskExecutionRolePolicy (which allows every repo and log group):
@@ -217,8 +218,9 @@ resource "aws_iam_role_policy" "execution" {
 
 # The app itself calls no AWS APIs, so its task role has no permissions at all.
 resource "aws_iam_role" "task" {
-  name               = "${var.name_prefix}-api-task"
-  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+  name                 = "${var.name_prefix}-api-task"
+  assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 # =====================================================================

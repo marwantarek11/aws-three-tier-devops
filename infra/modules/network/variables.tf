@@ -30,3 +30,9 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "permissions_boundary_arn" {
+  description = "IAM permissions boundary attached to every role this module creates (required by the CI deploy role)."
+  type        = string
+  default     = null
+}

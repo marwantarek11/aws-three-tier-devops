@@ -53,6 +53,23 @@ resource "aws_iam_role_policy_attachment" "github_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
+# Only same-repo PRs can obtain this role (fork PRs get no OIDC token), and even then
+# secret values stay unreadable.
+data "aws_iam_policy_document" "github_plan_guardrails" {
+  statement {
+    sid       = "DenySecretReads"
+    effect    = "Deny"
+    actions   = ["secretsmanager:GetSecretValue", "ssm:GetParameter*", "kms:Decrypt"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "github_plan_guardrails" {
+  name   = "deny-secret-reads"
+  role   = aws_iam_role.github_plan.id
+  policy = data.aws_iam_policy_document.github_plan_guardrails.json
+}
+
 # =====================================================================
 # Deploy role: only jobs running in the protected "dev" GitHub Environment
 # (which itself only accepts deployments from main)
@@ -165,23 +182,46 @@ data "aws_iam_policy_document" "github_deploy" {
 
   # ---- IAM: only roles named after this project/environment ----
   statement {
-    sid = "ManageProjectRoles"
+    sid = "ReadAndDeleteProjectRoles"
     actions = [
-      "iam:CreateRole",
       "iam:DeleteRole",
       "iam:GetRole",
-      "iam:UpdateRole",
-      "iam:UpdateAssumeRolePolicy",
-      "iam:TagRole",
-      "iam:UntagRole",
-      "iam:ListRolePolicies",
+      "iam:GetRolePolicy",
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
-      "iam:GetRolePolicy",
-      "iam:PutRolePolicy",
-      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
     ]
     resources = ["arn:aws:iam::${local.account_id}:role/${local.name_prefix}-*"]
+  }
+
+  # Creating a role or changing its permissions is only allowed when the role carries the
+  # workload boundary, which caps what any CI-created role can ever do.
+  statement {
+    sid = "WriteProjectRolesWithBoundaryOnly"
+    actions = [
+      "iam:CreateRole",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+    ]
+    resources = ["arn:aws:iam::${local.account_id}:role/${local.name_prefix}-*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [aws_iam_policy.workload_boundary.arn]
+    }
+  }
+
+  statement {
+    sid       = "ReadBoundaryPolicy"
+    actions   = ["iam:GetPolicy", "iam:GetPolicyVersion"]
+    resources = [aws_iam_policy.workload_boundary.arn]
   }
 
   statement {
@@ -211,6 +251,19 @@ data "aws_iam_policy_document" "github_deploy" {
         "rds.amazonaws.com",
       ]
     }
+  }
+  # Guardrails: CI never needs to read secret values or remove boundaries.
+  statement {
+    sid    = "DenySecretReadsAndBoundaryRemoval"
+    effect = "Deny"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "iam:DeleteRolePermissionsBoundary",
+      "iam:PutRolePermissionsBoundary",
+      "iam:CreatePolicyVersion",
+      "iam:SetDefaultPolicyVersion",
+    ]
+    resources = ["*"]
   }
 }
 

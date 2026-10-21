@@ -36,6 +36,9 @@ jobs:
   image:
     name: Build, scan & push image
     needs: [ci]
+    # workflow_dispatch can target any branch; only main may deploy (also enforced by the
+    # dev environment's branch policy and the deploy role's OIDC trust).
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: dev # OIDC subject becomes repo:<owner>/<repo>:environment:dev
     permissions:

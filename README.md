@@ -195,6 +195,10 @@ The default security group is emptied. RDS is not publicly accessible. VPC flow 
 - The CI **plan role** is `ReadOnlyAccess` and can only be assumed from pull requests.
 - The CI **deploy role** is limited to the services this stack uses, to one region, to IAM roles
   named `threetier-dev-*`, and to `iam:PassRole` to `ecs-tasks`/`vpc-flow-logs` only.
+- **No privilege escalation through CI:** the deploy role can create or change a role *only if* that role
+  carries the `threetier-dev-workload-boundary` permissions boundary. The boundary is created by bootstrap and caps
+  every CI-created role at ECR pull, project log groups and RDS-managed secrets. Both CI roles also have an explicit
+  `Deny` on reading secret values and on removing or replacing boundaries.
 
 **Encryption**
 - At rest: RDS (KMS), S3 (SSE), ECR (AES256), SNS (customer KMS key with rotation), state bucket (SSE + versioning).
@@ -256,7 +260,10 @@ Within about 1–2 minutes, `threetier-dev-api-5xx` goes to ALARM and the email 
 - **Single ECS task and single-AZ RDS** (`multi_az = false`, 1-day backups) to stay within free/low cost.
   The subnets already span 2 AZs, so HA is a variable flip.
 - **The deploy role is service-scoped, not resource-scoped** for every action (e.g. `ec2:*` in one region). This is
-  pragmatic for a role that runs `terraform apply`. In production, split infrastructure and app pipelines and add a permissions boundary.
+  pragmatic for a role that runs `terraform apply`, and IAM escalation is closed by the permissions boundary. In production,
+  split infrastructure and app pipelines, scope by `aws:ResourceTag/Project`, and use a dedicated AWS account per environment.
+- **The PR plan role can read Terraform state**, which contains the origin-verify header value. Only repository collaborators can
+  trigger it, because fork PRs never receive an OIDC token.
 - **No WAF, access logs or CMKs** for every service (see the checkov skips). The cost/complexity is not justified for a demo.
 - **Schema creation in app code** (`CREATE TABLE IF NOT EXISTS`) instead of a migration tool.
 - **Bootstrap uses local state** (it creates the state bucket). It could be migrated into the bucket afterwards.
