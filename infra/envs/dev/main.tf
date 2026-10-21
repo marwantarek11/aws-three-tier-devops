@@ -9,9 +9,12 @@ data "aws_ecr_repository" "api" {
   name = "${local.name_prefix}-api"
 }
 
+data "aws_caller_identity" "current" {}
+
 # Created by infra/bootstrap; the CI deploy role may only create roles that carry it.
-data "aws_iam_policy" "workload_boundary" {
-  name = "${local.name_prefix}-workload-boundary"
+# Built from its fixed name (a name lookup would need iam:ListPolicies on every policy).
+locals {
+  workload_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${local.name_prefix}-workload-boundary"
 }
 
 module "network" {
@@ -22,7 +25,7 @@ module "network" {
   az_count           = var.az_count
   log_retention_days = var.log_retention_days
 
-  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
+  permissions_boundary_arn = local.workload_boundary_arn
 }
 
 module "rds" {
@@ -60,7 +63,7 @@ module "ecs" {
   db_secret_arn = module.rds.master_user_secret_arn
 
   origin_verify_header_value = random_password.origin_verify.result
-  permissions_boundary_arn   = data.aws_iam_policy.workload_boundary.arn
+  permissions_boundary_arn   = local.workload_boundary_arn
 }
 
 module "frontend" {
