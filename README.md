@@ -315,12 +315,22 @@ cd ../../bootstrap && terraform destroy      # optional: removes state bucket, E
 
 ## 13. Evidence
 
-Screenshots are in [`docs/screenshots/`](docs/screenshots/):
+Captured from the live deployment (account on the AWS Free plan, `eu-north-1`), before teardown.
 
-| What | File |
-|---|---|
-| Successful `deploy` pipeline run | `pipeline-run.png` |
-| App in the browser (CloudFront URL) | `app.png` |
-| ECS service / running task | `ecs-service.png` |
-| CloudWatch dashboard | `dashboard.png` |
-| `api-5xx` alarm in ALARM state + email | `alarm.png`, `alarm-email.png` |
+**Pipeline:** every stage green on a push to `main` (CI → image → terraform apply → frontend → smoke test)
+![Pipeline run](docs/screenshots/pipeline-run.jpg)
+
+**App:** served by CloudFront; the button writes to PostgreSQL through the API
+![App](docs/screenshots/app.jpg)
+
+**ECS service:** 1/1 task running, deployment succeeded, target healthy behind the ALB
+![ECS service](docs/screenshots/ecs-service.jpg)
+
+**Alarm demo:** 30 requests to `/api/boom` put the 5xx and error-log alarms into ALARM
+![CloudWatch alarms](docs/screenshots/alarms.jpg)
+
+**Dashboard:** request/5xx spike, latency, ECS and RDS metrics, alarm status
+![CloudWatch dashboard](docs/screenshots/dashboard.jpg)
+
+**Alert delivery:** SNS email for `threetier-dev-api-5xx`
+![Alarm email](docs/screenshots/alarm-email.png)
