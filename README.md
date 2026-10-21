@@ -315,7 +315,7 @@ cd ../../bootstrap && terraform destroy      # optional: removes state bucket, E
 
 Captured from the live deployment (account on the AWS Free plan, `eu-north-1`), before teardown.
 
-**Pipeline:** every stage green on a push to `main` (CI → image → terraform apply → frontend → smoke test)
+**Pipeline:** every stage green (CI → image → terraform apply → frontend → smoke test); the same workflow runs automatically on every push to `main`
 ![Pipeline run](docs/screenshots/pipeline-run.jpg)
 
 **App:** served by CloudFront; the button writes to PostgreSQL through the API
