@@ -1,0 +1,37 @@
+# Checks consciously skipped for this demo environment. Each one is either a
+# false positive or a cost/scope trade-off documented in the README
+# ("Trade-offs" and "Going to production"). Everything else is enforced in CI.
+compact: true
+quiet: true
+skip-check:
+  # --- False positives ---
+  - CKV_AWS_260  # ALB :80 ingress is the CloudFront managed prefix list, not 0.0.0.0/0
+  - CKV_AWS_174  # default *.cloudfront.net cert; viewer TLS is managed by AWS (TLSv1.2+)
+  - CKV_AWS_109  # KMS key policy "kms:*" for account root is the AWS-required default
+  - CKV_AWS_111  # (same) key policy + scoped deploy role, see README
+  - CKV_AWS_356  # (same) key policies always use Resource "*"
+  - CKV_AWS_394  # AZs are selected by name and sliced deterministically
+  # --- Needs a custom domain + ACM certificate (out of scope, see README) ---
+  - CKV_AWS_2    # ALB HTTPS listener
+  - CKV_AWS_103  # ALB TLS policy
+  - CKV2_AWS_20  # ALB HTTP->HTTPS redirect (viewers already forced to HTTPS at CloudFront)
+  - CKV_AWS_378  # HTTP target group (TLS terminates at CloudFront/ALB)
+  - CKV2_AWS_42  # CloudFront custom certificate
+  # --- Production hardening deferred for cost/time (listed in README) ---
+  - CKV_AWS_68   # WAF on CloudFront
+  - CKV2_AWS_28  # WAF on ALB
+  - CKV2_AWS_47  # WAF managed rules
+  - CKV_AWS_310  # CloudFront origin failover
+  - CKV_AWS_374  # geo restriction
+  - CKV_AWS_86   # CloudFront access logs
+  - CKV_AWS_91   # ALB access logs
+  - CKV_AWS_18   # S3 access logs
+  - CKV2_AWS_62  # S3 event notifications
+  - CKV_AWS_144  # S3 cross-region replication
+  - CKV_AWS_145  # S3 SSE-KMS (SSE-S3 AES256 is enabled)
+  - CKV_AWS_136  # ECR KMS CMK (AES256 is enabled)
+  - CKV_AWS_158  # CloudWatch Logs CMK (logs are encrypted with AWS-owned keys by default)
+  - CKV_AWS_338  # 1-year log retention (14 days in dev)
+  - CKV_AWS_150  # ALB deletion protection (demo must be destroyable)
+  - CKV_AWS_118  # RDS enhanced monitoring
+  - CKV_AWS_353  # RDS Performance Insights

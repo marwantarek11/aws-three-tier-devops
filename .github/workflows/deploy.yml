@@ -1,0 +1,172 @@
+# Continuous delivery: every push to main runs
+#   Build -> Test -> Build & push Docker image -> Deploy (infra + app) -> Frontend -> Smoke test
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys of the same environment at once; never cancel one mid-apply.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.17.0"
+
+jobs:
+  # ---------------------------------------------------------------- 1+2. Build & test
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  # ---------------------------------------------------------------- 3. Docker image
+  image:
+    name: Build, scan & push image
+    needs: [ci]
+    runs-on: ubuntu-latest
+    environment: dev # OIDC subject becomes repo:<owner>/<repo>:environment:dev
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: meta
+        name: Image tag = commit SHA (immutable, traceable)
+        run: echo "tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: app/backend
+          load: true
+          build-args: APP_VERSION=${{ steps.meta.outputs.tag }}
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image (Trivy) before it can reach the registry
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Push image
+        run: docker push "${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}"
+
+  # ---------------------------------------------------------------- 4. Deploy
+  deploy:
+    name: Terraform apply (infra + new task definition)
+    needs: [image]
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: ${{ steps.out.outputs.app_url }}
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/envs/dev
+    outputs:
+      app_url: ${{ steps.out.outputs.app_url }}
+      bucket: ${{ steps.out.outputs.bucket }}
+      distribution_id: ${{ steps.out.outputs.distribution_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: terraform plan
+        run: |
+          terraform plan -input=false -out=tfplan \
+            -var "image_tag=${{ needs.image.outputs.image_tag }}" \
+            -var "alert_email=${{ vars.ALERT_EMAIL }}"
+
+      # ECS rolling update with circuit breaker: if new tasks never turn healthy,
+      # ECS rolls back to the previous task definition and this step fails.
+      - name: terraform apply
+        run: terraform apply -input=false tfplan
+
+      - id: out
+        name: Export outputs
+        run: |
+          {
+            echo "app_url=$(terraform output -raw app_url)"
+            echo "bucket=$(terraform output -raw frontend_bucket)"
+            echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)"
+          } >> "$GITHUB_OUTPUT"
+
+  frontend:
+    name: Publish frontend
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sync static files to S3
+        run: aws s3 sync app/frontend "s3://${{ needs.deploy.outputs.bucket }}" --delete --exclude "nginx.local.conf"
+
+      - name: Invalidate CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id "${{ needs.deploy.outputs.distribution_id }}" --paths "/*"
+
+  # ---------------------------------------------------------------- Verify
+  smoke-test:
+    name: Smoke test
+    needs: [deploy, frontend, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Frontend, API and deployed version
+        env:
+          APP_URL: ${{ needs.deploy.outputs.app_url }}
+          EXPECTED_VERSION: ${{ needs.image.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "$APP_URL/" -o /dev/null
+          body=$(curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "$APP_URL/api/hello")
+          echo "$body"
+          echo "$body" | grep -q "$EXPECTED_VERSION" || { echo "::error::deployed version mismatch"; exit 1; }
+          curl -fsS -X POST "$APP_URL/api/visits"
+          echo "Smoke test passed for $EXPECTED_VERSION at $APP_URL" >> "$GITHUB_STEP_SUMMARY"

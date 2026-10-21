@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Three-Tier Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; color: #1f2937; }
+    button { padding: .5rem 1rem; margin-right: .5rem; cursor: pointer; }
+    pre { background: #f3f4f6; padding: 1rem; border-radius: 6px; min-height: 3rem; }
+  </style>
+</head>
+<body>
+  <h1>Three-Tier Demo</h1>
+  <p>Static frontend (S3 + CloudFront) → API (ECS Fargate) → PostgreSQL (RDS).</p>
+  <button id="hello">Call /api/hello</button>
+  <button id="visit">Record a visit (DB)</button>
+  <pre id="out">Click a button…</pre>
+  <script>
+    const out = document.getElementById("out");
+    async function call(path, method = "GET") {
+      try {
+        const res = await fetch(path, { method });
+        out.textContent = `${res.status} ${path}\n` + JSON.stringify(await res.json(), null, 2);
+      } catch (err) {
+        out.textContent = `Request failed: ${err}`;
+      }
+    }
+    document.getElementById("hello").onclick = () => call("/api/hello");
+    document.getElementById("visit").onclick = () => call("/api/visits", "POST");
+  </script>
+</body>
+</html>

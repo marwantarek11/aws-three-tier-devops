@@ -1,0 +1,4 @@
+# Copy to backend.hcl (git-ignored) using the outputs of infra/bootstrap, then:
+#   terraform init -backend-config=backend.hcl
+bucket = "threetier-tfstate-<ACCOUNT_ID>"
+region = "eu-central-1"

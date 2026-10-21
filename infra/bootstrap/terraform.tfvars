@@ -1,0 +1,6 @@
+aws_region   = "eu-central-1"
+project      = "threetier"
+environment  = "dev"
+owner        = "marwan"
+github_owner = "marwantarek11"
+github_repo  = "aws-three-tier-devops"
