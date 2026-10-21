@@ -193,7 +193,6 @@ data "aws_iam_policy_document" "github_deploy" {
       "iam:TagRole",
       "iam:UntagRole",
       "iam:UpdateRole",
-      "iam:UpdateAssumeRolePolicy",
     ]
     resources = ["arn:aws:iam::${local.account_id}:role/${local.name_prefix}-*"]
   }
@@ -264,6 +263,33 @@ data "aws_iam_policy_document" "github_deploy" {
       "iam:SetDefaultPolicyVersion",
     ]
     resources = ["*"]
+  }
+
+  # Trust policies are static: CI must never re-point any role's trust (e.g. at its own OIDC
+  # identity to assume a workload role) or touch the CI roles themselves.
+  statement {
+    sid       = "DenyTrustRewrites"
+    effect    = "Deny"
+    actions   = ["iam:UpdateAssumeRolePolicy"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ProtectCiRoles"
+    effect = "Deny"
+    actions = [
+      "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+    ]
+    resources = [
+      "arn:aws:iam::${local.account_id}:role/${var.project}-github-*",
+    ]
   }
 }
 
