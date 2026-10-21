@@ -26,6 +26,11 @@ jobs:
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml
+    # A called workflow can't exceed its caller's permissions; ci.yml's PR-only plan job
+    # declares id-token: write (it is skipped on push, so no token is minted here).
+    permissions:
+      contents: read
+      id-token: write
 
   # ---------------------------------------------------------------- 3. Docker image
   image:
