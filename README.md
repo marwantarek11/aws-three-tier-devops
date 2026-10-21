@@ -6,8 +6,6 @@ the focus is the infrastructure, automation, security and observability around i
 
 ![Architecture](docs/architecture.png)
 
-> Interactive version: open [`docs/architecture.html`](docs/architecture.html) in a browser.
-> Diagram source: [`docs/architecture.json`](docs/architecture.json).
 
 | Tier | Service | Where |
 |---|---|---|
